@@ -9,15 +9,18 @@ class BambeeTemplate extends F
     
     private $template = "";
     private $vars = array();
-    private $compile_vars = array();
     
     private $bambee;
     
     public function __construct($template_string,$bambee)
     {
         $this->bambee = $bambee;
-        $this->compiled = $template_string;
-        $this->find_conditions();
+        $this->compiled = preg_replace("'[{][*].*?[*][}]'s","",$template_string);
+        do
+        {
+            $end = $this->find_conditions();
+        }
+        while (false === $end);
     }
     
     private function find_conditions($offset=-1,$tag=null)
@@ -55,7 +58,7 @@ class BambeeTemplate extends F
         // If we find an ending tag -> return true
         elseif (false !== ($pos = strpos($this->compiled,"{/".$tag,$offset+1)))
         {
-            //echo "Found ending ".$tag." tag!</blockquote>";
+            // echo "Found ending ".$tag." tag!</blockquote>";
             
             $condition_start = $offset;
             $condition_end = $pos + strlen($tag) + 3;
@@ -75,6 +78,10 @@ class BambeeTemplate extends F
         elseif ($offset > -1)
         {
             throw new BambeeTemplateException("Bird! Missing condition ending!");
+        }
+        else
+        {
+            return true;
         }
     }
 
@@ -113,9 +120,9 @@ class BambeeTemplate extends F
                 $props = trim($n[2][$k]);
                 if (preg_match("'from=[$]([^\s]+)'",$props,$m))
                 {
-                    if (!empty($this->vars[$m[1]]))
+                    $from = $this->getvareval($m[1]);
+                    if (is_array($from) && !empty($from))
                     {
-                        $from = $m[1];
                         if (preg_match("/item=(['\"])([^'\"\s]+)\\1/",$props,$m))
                         {
                             $item = $m[2];
@@ -127,7 +134,7 @@ class BambeeTemplate extends F
                             $key = $m[2];
                         }
                         $res = "";
-                        foreach ($this->vars[$from] as $fk => $fv)
+                        foreach ($from as $fk => $fv)
                         {
                             /* Here comes the actual foreach resolving */
                             $this->bambee->assign($key,$fk);
@@ -158,8 +165,9 @@ class BambeeTemplate extends F
                 {
                     if (preg_match("'^(!?)[$]([^\s]+)$'",$cond,$m))
                     {
-                        if (($m[1] == "!" &&  empty($this->compile_vars[$m[2]]))
-                         || ($m[1] != "!" && !empty($this->compile_vars[$m[2]])))
+                        $var = $this->getvareval($m[2]);
+                        if (($m[1] == "!" &&  empty($var))
+                         || ($m[1] != "!" && !empty($var)))
                         {
                             return $n[3][$k];
                         }
@@ -176,11 +184,21 @@ class BambeeTemplate extends F
         return "";
     }
     
+    public function getvareval($tplvar)
+    {
+        $var = null;
+        $eval = "['".preg_replace("'[.]'","']['",$tplvar)."']";  // .   -> ']['
+        $eval = preg_replace("/([^\]])\[/","\\1'][",$eval);      // a[  -> a'][
+        $eval = '$this->vars'.preg_replace("/\]'\]/","]",$eval); // ]'] -> ]
+        $eval = '$var = isset('.$eval.') ? '.$eval.' : null;';
+        eval($eval);
+        return $var;
+    }
+    
     public function resolve(&$vars)
     {
         $this->vars = $vars;
         $this->template = $this->compiled;
-        $this->compile_vars = self::implodeArrayKeys($this->vars);
         
         while (preg_match("'[{]condition:([0-9]+)[}]'",$this->template,$n))
         {
@@ -188,15 +206,17 @@ class BambeeTemplate extends F
             $this->template = str_replace($n[0],$resolution,$this->template);
         }
         
-        foreach ($this->compile_vars as $k => $value)
+        if (preg_match_all("'[{][$](.*?)[}]'",$this->template,$n))
         {
-            $key = '{$'.$k.'}';
-            $this->template = str_replace($key,$value,$this->template);
+            foreach ($n[0] as $k => $v)
+            {
+                $var = $this->getvareval($n[1][$k]);
+                $this->template = str_replace($v,$var,$this->template);
+            }
         }
         
         $this->template = preg_replace("'[{].*?[}]'","",$this->template);
         
-        $this->compile_vars = array();
         return $this->template;
     }
 }
