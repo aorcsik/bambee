@@ -1,8 +1,6 @@
 <?php
 
-require_once("F.class.php");
-
-class BambeeTemplate extends F
+class BambeeTemplate
 {
     private $compiled = "";
     private $conditions = array();
@@ -184,12 +182,20 @@ class BambeeTemplate extends F
         return "";
     }
     
+    public static function evalTplVar($tplvar)
+    {
+        $eval = "['".preg_replace("'[.]'","']['",$tplvar)."']"; // .   -> ']['
+        $eval = preg_replace("/([^\]])\[/","\\1'][",$eval);     // a[  -> a'][
+        $eval = preg_replace("/\]'\]/","]",$eval);              // ]'] -> ]
+        
+        return $eval;
+    }
+    
     public function getvareval($tplvar)
     {
         $var = null;
-        $eval = "['".preg_replace("'[.]'","']['",$tplvar)."']";  // .   -> ']['
-        $eval = preg_replace("/([^\]])\[/","\\1'][",$eval);      // a[  -> a'][
-        $eval = '$this->vars'.preg_replace("/\]'\]/","]",$eval); // ]'] -> ]
+        $eval = self::evalTplVar($tplvar);
+        $eval = '$this->vars'.$eval;
         $eval = '$var = isset('.$eval.') ? '.$eval.' : null;';
         eval($eval);
         return $var;
